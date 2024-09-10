@@ -5,6 +5,11 @@ from typing import List
 
 from jupyter_ai.models import AgentChatMessage, HumanChatMessage
 
+try:
+    from jupyterlab_collaborative_chat.ychat import YChat
+except:
+    from typing import Any as YChat
+
 from .base import BaseChatHandler, SlashCommandRoutingType
 
 
@@ -31,11 +36,11 @@ class ExportChatHandler(BaseChatHandler):
             return ""
 
     # Write the chat history to a markdown file with a timestamp
-    async def process_message(self, message: HumanChatMessage):
+    async def process_message(self, message: HumanChatMessage, chat: YChat | None):
         markdown_content = "\n\n".join(
             self.chat_message_to_markdown(msg) for msg in self._chat_history
         )
-        args = self.parse_args(message)
+        args = self.parse_args(message, chat)
         chat_filename = (  # if no filename, use "chat_history" + timestamp
             args.path[0]
             if (args.path and args.path[0] != "")
@@ -46,4 +51,4 @@ class ExportChatHandler(BaseChatHandler):
         )  # Do not use timestamp if filename is entered as argument
         with open(chat_file, "w") as chat_history:
             chat_history.write(markdown_content)
-        self.reply(f"File saved to `{chat_file}`")
+        self.reply(f"File saved to `{chat_file}`", chat)

@@ -6,6 +6,7 @@ import traceback
 from typing import (
     TYPE_CHECKING,
     Awaitable,
+    Callable,
     ClassVar,
     Dict,
     List,
@@ -29,6 +30,11 @@ from jupyter_ai.models import (
 from jupyter_ai_magics import Persona
 from jupyter_ai_magics.providers import BaseProvider
 from langchain.pydantic_v1 import BaseModel
+
+try:
+    from jupyterlab_collaborative_chat.ychat import YChat
+except:
+    from typing import Any as YChat
 
 if TYPE_CHECKING:
     from jupyter_ai.handlers import RootChatHandler
@@ -132,6 +138,7 @@ class BaseChatHandler:
         dask_client_future: Awaitable[DaskClient],
         help_message_template: str,
         chat_handlers: Dict[str, "BaseChatHandler"],
+        write_message: Callable[[YChat, str], None] | None = None
     ):
         self.log = log
         self.config_manager = config_manager
@@ -157,7 +164,9 @@ class BaseChatHandler:
         self.llm_params = None
         self.llm_chain = None
 
-    async def on_message(self, message: HumanChatMessage):
+        self.write_message = write_message
+
+    async def on_message(self, message: HumanChatMessage, chat: YChat| None = None):
         """
         Method which receives a human message, calls `self.get_llm_chain()`, and
         processes the message via `self.process_message()`, calling
@@ -173,7 +182,8 @@ class BaseChatHandler:
             )
             if slash_command in lm_provider_klass.unsupported_slash_commands:
                 self.reply(
-                    "Sorry, the selected language model does not support this slash command."
+                    "Sorry, the selected language model does not support this slash command.",
+                    chat
                 )
                 return
 
@@ -185,6 +195,7 @@ class BaseChatHandler:
             if not lm_provider.allows_concurrency:
                 self.reply(
                     "The currently selected language model can process only one request at a time. Please wait for me to reply before sending another question.",
+                    chat,
                     message,
                 )
                 return
@@ -192,43 +203,43 @@ class BaseChatHandler:
         BaseChatHandler._requests_count += 1
 
         if self.__class__.supports_help:
-            args = self.parse_args(message, silent=True)
+            args = self.parse_args(message, chat, silent=True)
             if args and args.help:
-                self.reply(self.parser.format_help(), message)
+                self.reply(self.parser.format_help(), chat, message)
                 return
 
         try:
-            await self.process_message(message)
+            await self.process_message(message, chat)
         except Exception as e:
             try:
                 # we try/except `handle_exc()` in case it was overriden and
                 # raises an exception by accident.
-                await self.handle_exc(e, message)
+                await self.handle_exc(e, message, chat)
             except Exception as e:
                 await self._default_handle_exc(e, message)
         finally:
             BaseChatHandler._requests_count -= 1
 
-    async def process_message(self, message: HumanChatMessage):
+    async def process_message(self, message: HumanChatMessage, chat: YChat | None):
         """
         Processes a human message routed to this chat handler. Chat handlers
         (subclasses) must implement this method. Don't forget to call
-        `self.reply(<response>, message)` at the end!
+        `self.reply(<response>, chat, message)` at the end!
 
         The method definition does not need to be wrapped in a try/except block;
         any exceptions raised here are caught by `self.handle_exc()`.
         """
         raise NotImplementedError("Should be implemented by subclasses.")
 
-    async def handle_exc(self, e: Exception, message: HumanChatMessage):
+    async def handle_exc(self, e: Exception, message: HumanChatMessage, chat: YChat | None):
         """
         Handles an exception raised by `self.process_message()`. A default
         implementation is provided, however chat handlers (subclasses) should
         implement this method to provide a more helpful error response.
         """
-        await self._default_handle_exc(e, message)
+        await self._default_handle_exc(e, message, chat)
 
-    async def _default_handle_exc(self, e: Exception, message: HumanChatMessage):
+    async def _default_handle_exc(self, e: Exception, message: HumanChatMessage, chat: YChat | None):
         """
         The default definition of `handle_exc()`. This is the default used when
         the `handle_exc()` excepts.
@@ -238,33 +249,35 @@ class BaseChatHandler:
         if lm_provider and lm_provider.is_api_key_exc(e):
             provider_name = getattr(self.config_manager.lm_provider, "name", "")
             response = f"Oops! There's a problem connecting to {provider_name}. Please update your {provider_name} API key in the chat settings."
-            self.reply(response, message)
+            self.reply(response, chat, message)
             return
         formatted_e = traceback.format_exc()
         response = (
             f"Sorry, an error occurred. Details below:\n\n```\n{formatted_e}\n```"
         )
-        self.reply(response, message)
+        self.reply(response, chat, message)
 
-    def reply(self, response: str, human_msg: Optional[HumanChatMessage] = None):
+    def reply(self, response: str, chat: YChat | None, human_msg: Optional[HumanChatMessage] = None):
         """
         Sends an agent message, usually in response to a received
         `HumanChatMessage`.
         """
-        agent_msg = AgentChatMessage(
-            id=uuid4().hex,
-            time=time.time(),
-            body=response,
-            reply_to=human_msg.id if human_msg else "",
-            persona=self.persona,
-        )
+        if chat is not None:
+            self.write_message(chat, response)
+        else:
+            agent_msg = AgentChatMessage(
+                id=uuid4().hex,
+                time=time.time(),
+                body=response,
+                reply_to=human_msg.id if human_msg else "",
+                persona=self.persona,
+            )
+            for handler in self._root_chat_handlers.values():
+                if not handler:
+                    continue
 
-        for handler in self._root_chat_handlers.values():
-            if not handler:
-                continue
-
-            handler.broadcast_message(agent_msg)
-            break
+                handler.broadcast_message(agent_msg)
+                break
 
     @property
     def persona(self):
@@ -367,14 +380,14 @@ class BaseChatHandler:
     ):
         raise NotImplementedError("Should be implemented by subclasses")
 
-    def parse_args(self, message, silent=False):
+    def parse_args(self, message, chat, silent=False):
         args = message.body.split(" ")
         try:
             args = self.parser.parse_args(args[1:])
         except (argparse.ArgumentError, SystemExit) as e:
             if not silent:
                 response = f"{self.parser.format_usage()}"
-                self.reply(response, message)
+                self.reply(response, chat, message)
             return None
         return args
 
@@ -399,7 +412,7 @@ class BaseChatHandler:
         else:
             return self.root_dir
 
-    def send_help_message(self, human_msg: Optional[HumanChatMessage] = None) -> None:
+    def send_help_message(self, chat: YChat | None, human_msg: Optional[HumanChatMessage] = None) -> None:
         """Sends a help message to all connected clients."""
         lm_provider = self.config_manager.lm_provider
         unsupported_slash_commands = (
@@ -429,6 +442,16 @@ class BaseChatHandler:
             persona=self.persona,
         )
 
-        self._chat_history.append(help_message)
-        for websocket in self._root_chat_handlers.values():
-            websocket.write_message(help_message.json())
+        if chat is not None:
+            self.write_message(chat, help_message_body)
+        else:
+            help_message = AgentChatMessage(
+                id=uuid4().hex,
+                time=time.time(),
+                body=help_message_body,
+                reply_to=human_msg.id if human_msg else "",
+                persona=self.persona,
+            )
+            self._chat_history.append(help_message)
+            for websocket in self._root_chat_handlers.values():
+                websocket.write_message(help_message.json())

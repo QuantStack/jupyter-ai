@@ -1,5 +1,10 @@
 from jupyter_ai.models import ClearMessage
 
+try:
+    from jupyterlab_collaborative_chat.ychat import YChat
+except:
+    from typing import Any as YChat
+
 from .base import BaseChatHandler, SlashCommandRoutingType
 
 
@@ -16,7 +21,7 @@ class ClearChatHandler(BaseChatHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    async def process_message(self, _):
+    async def process_message(self, _, chat: YChat | None):
         # Clear chat
         for handler in self._root_chat_handlers.values():
             if not handler:
@@ -28,4 +33,4 @@ class ClearChatHandler(BaseChatHandler):
             break
 
         # re-send help message
-        self.send_help_message()
+        self.send_help_message(chat)

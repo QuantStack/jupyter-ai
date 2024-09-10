@@ -11,6 +11,11 @@ from jupyter_ai_magics.providers import BaseProvider
 from langchain_core.messages import AIMessageChunk
 from langchain_core.runnables import ConfigurableFieldSpec, RunnableWithMessageHistory
 
+try:
+    from jupyterlab_collaborative_chat.ychat import YChat
+except:
+    from typing import Any as YChat
+
 from ..models import HumanChatMessage
 from .base import BaseChatHandler, SlashCommandRoutingType
 
@@ -80,23 +85,25 @@ class DefaultChatHandler(BaseChatHandler):
 
         return stream_id
 
-    def _send_stream_chunk(self, stream_id: str, content: str, complete: bool = False):
+    def _send_stream_chunk(self, stream_id: str, content: str, chat: YChat | None, complete: bool = False):
         """
         Sends an `agent-stream-chunk` message containing content that should be
         appended to an existing `agent-stream` message with ID `stream_id`.
         """
-        stream_chunk_msg = AgentStreamChunkMessage(
-            id=stream_id, content=content, stream_complete=complete
-        )
+        if chat is not None:
+            self.write_message(chat, content)
+        else:
+            stream_chunk_msg = AgentStreamChunkMessage(
+                id=stream_id, content=content, stream_complete=complete
+            )
+            for handler in self._root_chat_handlers.values():
+                if not handler:
+                    continue
 
-        for handler in self._root_chat_handlers.values():
-            if not handler:
-                continue
+                handler.broadcast_message(stream_chunk_msg)
+                break
 
-            handler.broadcast_message(stream_chunk_msg)
-            break
-
-    async def process_message(self, message: HumanChatMessage):
+    async def process_message(self, message: HumanChatMessage, chat: YChat | None):
         self.get_llm_chain()
         received_first_chunk = False
 
@@ -119,10 +126,10 @@ class DefaultChatHandler(BaseChatHandler):
                 if isinstance(chunk, AIMessageChunk):
                     self._send_stream_chunk(stream_id, chunk.content)
                 elif isinstance(chunk, str):
-                    self._send_stream_chunk(stream_id, chunk)
+                    self._send_stream_chunk(stream_id, chunk, chat)
                 else:
                     self.log.error(f"Unrecognized type of chunk yielded: {type(chunk)}")
                     break
 
             # complete stream after all chunks have been streamed
-            self._send_stream_chunk(stream_id, "", complete=True)
+            self._send_stream_chunk(stream_id, "", chat, complete=True)

@@ -56,6 +56,8 @@ dev = ["jupyter_ai_magics[dev]"]
 
 all = ["jupyter_ai_magics[all]", "pypdf", "arxiv"]
 
+collaborative = ["jupyterlab-collaborative-chat"]
+
 [tool.hatch.version]
 source = "nodejs"
 
