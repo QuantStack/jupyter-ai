@@ -33,4 +33,4 @@ class ClearChatHandler(BaseChatHandler):
             break
 
         # re-send help message
-        self.send_help_message()
+        self.send_help_message(chat)
