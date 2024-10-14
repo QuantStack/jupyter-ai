@@ -16,6 +16,7 @@ export function buildAiSettings(
       rmRegistry={rmRegistry}
       completionProvider={completionProvider}
       openInlineCompleterSettings={openInlineCompleterSettings}
+      inputOptions={false}
     />
   );
   SettingsWidget.id = 'jupyter-ai::settings';
