@@ -1,0 +1,13 @@
+.jp-toolbar-users-item .jp-MenuBar-imageIcon.disconnected {
+  opacity: 0.5;
+}
+
+.jp-toolbar-users-item .jp-MenuBar-imageIcon.disconnected:before {
+  position: absolute;
+  left: 11px;
+  content: '';
+  height: 28px;
+  width: 2px;
+  background-color: #333;
+  transform: rotate(45deg);
+}

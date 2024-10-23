@@ -18,7 +18,7 @@ from jupyter_events import EventLogger
 from jupyter_server.extension.application import ExtensionApp
 from jupyter_server.utils import url_path_join
 from jupyterlab_collaborative_chat.ychat import YChat
-from pycrdt import ArrayEvent
+from pycrdt import ArrayEvent, MapEvent
 from tornado.web import StaticFileHandler
 from traitlets import Dict, Integer, List, Unicode
 
@@ -239,6 +239,9 @@ class AiExtension(ExtensionApp):
         # updating it.
         self.messages_indexes = {}
 
+        # The subscriptions to chats messages.
+        self.subscriptions = {}
+
     async def connect_chat(
         self, logger: EventLogger, schema_id: str, data: dict
     ) -> None:
@@ -257,8 +260,14 @@ class AiExtension(ExtensionApp):
             )
             chat.awareness.set_local_state_field("user", BOT)
 
-            callback = partial(self.on_change, chat)
-            chat.ymessages.observe(callback)
+            # Check if the AI agent should be connected to the chat or not.
+            chat_meta = chat.get_metadata()
+            if "agents" in chat_meta and BOT["username"] in chat.get_metadata()["agents"]:
+                message_callback = partial(self.on_message_change, chat)
+                self.subscriptions[chat.get_id()] = chat.ymessages.observe(message_callback)
+
+            metadata_callback = partial(self.on_metadata_change, chat)
+            chat.ymetadata.observe(metadata_callback)
 
     async def get_chat(self, room_id: str) -> YChat:
         if COLLAB_VERSION == 3:
@@ -272,7 +281,7 @@ class AiExtension(ExtensionApp):
             document = room._document
         return document
 
-    def on_change(self, chat: YChat, events: ArrayEvent) -> None:
+    def on_message_change(self, chat: YChat, events: ArrayEvent) -> None:
         for change in events.delta:
             if not "insert" in change.keys():
                 continue
@@ -295,6 +304,22 @@ class AiExtension(ExtensionApp):
                 self.serverapp.io_loop.asyncio_loop.create_task(
                     self._route(chat_message, chat)
                 )
+
+    def on_metadata_change(self, chat: YChat, events: MapEvent) -> None:
+        """
+        Triggered when a chat metadata has changed.
+        It will connect or disconnect the AI agent from the chat.
+        """
+        if "agents" in events.keys:
+            if BOT["username"] in events.keys["agents"]["newValue"]:
+                message_callback = partial(self.on_message_change, chat)
+                self.subscriptions[chat.get_id()] = chat.ymessages.observe(message_callback)
+            else:
+                chat.ymessages.unobserve(self.subscriptions[chat.get_id()])
+                del self.subscriptions[chat.get_id()]
+
+            # Update the bot user avatar
+            chat.awareness.set_local_state_field("user", BOT)
 
     async def _route(self, message: HumanChatMessage, chat: YChat):
         """Method that routes an incoming message to the appropriate handler."""
