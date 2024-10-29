@@ -15,6 +15,7 @@ import {
 import { IDocumentWidget } from '@jupyterlab/docregistry';
 import { IRenderMimeRegistry } from '@jupyterlab/rendermime';
 import { Signal } from '@lumino/signaling';
+import { IChatFactory } from 'jupyterlab-collaborative-chat';
 import type { Awareness } from 'y-protocols/awareness';
 
 import { ChatHandler } from './chat_handler';
@@ -33,6 +34,7 @@ import {
 import { buildErrorWidget } from './widgets/chat-error';
 import { buildChatSidebar } from './widgets/chat-sidebar';
 import { buildAiSettings } from './widgets/settings-widget';
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
 
 export type DocumentTracker = IWidgetTracker<IDocumentWidget>;
 
@@ -184,6 +186,36 @@ const plugin: JupyterFrontEndPlugin<IJaiCore> = {
 };
 
 /**
+ * Lock the default directory for chat creation / look for.
+ */
+const chatDefaultDirectory: JupyterFrontEndPlugin<void> = {
+  id: '@jupyter-ai/core:chatSettings',
+  autoStart: true,
+  requires: [IChatFactory, ISettingRegistry],
+  activate: (
+    app: JupyterFrontEnd,
+    factory: IChatFactory,
+    settingRegistry: ISettingRegistry
+  ) => {
+    Promise.all([
+      app.restored,
+      settingRegistry.load('jupyterlab-collaborative-chat-extension:factory')
+    ]).then(([, setting]) => {
+      // Read the settings
+      setting.set('defaultDirectory', 'ai-chats');
+      if (setting.schema.properties) {
+        setting.schema.properties.defaultDirectory = {
+          description: 'Default directory where to create and look for chat.',
+          type: 'string',
+          default: '',
+          readOnly: true
+        };
+      }
+    });
+  }
+};
+
+/**
  * Add slash commands to collaborative chat.
  */
 const collaborative_autocompletion: JupyterFrontEndPlugin<void> = {
@@ -203,7 +235,8 @@ export default [
   statusItemPlugin,
   completionPlugin,
   menuPlugin,
-  collaborative_autocompletion
+  collaborative_autocompletion,
+  chatDefaultDirectory
 ];
 
 export * from './contexts';
