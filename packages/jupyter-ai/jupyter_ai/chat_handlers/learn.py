@@ -143,9 +143,7 @@ class LearnChatHandler(BaseChatHandler):
 
         if args.delete:
             self.delete()
-            self.reply(
-                f"👍 I have deleted everything I previously learned.", message
-            )
+            self.reply(f"👍 I have deleted everything I previously learned.", message)
             return
 
         if args.list:
@@ -205,9 +203,7 @@ class LearnChatHandler(BaseChatHandler):
         # delete and relearn index if embedding model was changed
         await self.delete_and_relearn()
 
-        with self.pending(
-            f"Loading and splitting files for {load_path}", message
-        ):
+        with self.pending(f"Loading and splitting files for {load_path}", message):
             try:
                 await self.learn_dir(
                     load_path, args.chunk_size, args.chunk_overlap, args.all_files

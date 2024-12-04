@@ -6,6 +6,7 @@ import uuid
 from functools import partial
 from typing import Dict, Optional
 
+import traitlets
 from dask.distributed import Client as DaskClient
 from importlib_metadata import entry_points
 from jupyter_ai.chat_handlers.learn import Retriever
@@ -18,7 +19,6 @@ from jupyter_server.utils import url_path_join
 from jupyterlab_chat.ychat import YChat
 from pycrdt import ArrayEvent
 from tornado.web import StaticFileHandler
-import traitlets
 from traitlets import Integer, List, Unicode
 
 from .chat_handlers import (
@@ -237,7 +237,7 @@ class AiExtension(ExtensionApp):
         """
         Nested dictionary that returns the dedicated chat handler instance that
         should be used, given the room ID and command ID respectively.
-        
+
         Example: `self.chat_handlers_by_room[<room_id>]` yields the set of chat
         handlers dedicated to the room identified by `<room_id>`.
         """
@@ -249,11 +249,11 @@ class AiExtension(ExtensionApp):
         self.event_logger.add_listener(
             schema_id=JUPYTER_COLLABORATION_EVENTS_URI, listener=self.connect_chat
         )
-    
+
     async def connect_chat(
         self, logger: EventLogger, schema_id: str, data: dict
     ) -> None:
-        # ignore events that are not chat room initialization events 
+        # ignore events that are not chat room initialization events
         if not (
             data["room"].startswith("text:chat:")
             and data["action"] == "initialize"
@@ -276,7 +276,7 @@ class AiExtension(ExtensionApp):
         )
         if ychat.awareness is not None:
             ychat.awareness.set_local_state_field("user", BOT)
-        
+
         # initialize chat handlers for new chat
         self.chat_handlers_by_room[room_id] = self._init_chat_handlers(ychat)
 
@@ -504,11 +504,13 @@ class AiExtension(ExtensionApp):
             await dask_client.close()
             self.log.debug("Closed Dask client.")
 
-    def _init_chat_handlers(self, ychat: Optional[YChat] = None) -> Dict[str, BaseChatHandler]:
+    def _init_chat_handlers(
+        self, ychat: Optional[YChat] = None
+    ) -> Dict[str, BaseChatHandler]:
         """
         Initializes a set of chat handlers. May accept a YChat instance for
         collaborative chats.
-        
+
         TODO: Make `ychat` required once Jupyter Chat migration is complete.
         """
         eps = entry_points()
@@ -528,7 +530,7 @@ class AiExtension(ExtensionApp):
             "chat_handlers": chat_handlers,
             "context_providers": self.settings["jai_context_providers"],
             "message_interrupted": self.settings["jai_message_interrupted"],
-            "ychat": ychat
+            "ychat": ychat,
         }
         default_chat_handler = DefaultChatHandler(**chat_handler_kwargs)
         clear_chat_handler = ClearChatHandler(**chat_handler_kwargs)

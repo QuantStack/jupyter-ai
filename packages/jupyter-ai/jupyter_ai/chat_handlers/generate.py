@@ -273,9 +273,7 @@ class GenerateChatHandler(BaseChatHandler):
         response = f"""🎉 I have created your notebook and saved it to the location {final_path}. I am still learning how to create notebooks, so please review all code before running it."""
         self.reply(response, message)
 
-    async def handle_exc(
-        self, e: Exception, message: HumanChatMessage
-    ):
+    async def handle_exc(self, e: Exception, message: HumanChatMessage):
         timestamp = time.strftime("%Y-%m-%d-%H.%M.%S")
         default_log_dir = Path(self.output_dir) / "jupyter-ai-logs"
         log_dir = self.log_dir or default_log_dir

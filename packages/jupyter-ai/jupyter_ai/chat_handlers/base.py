@@ -256,9 +256,7 @@ class BaseChatHandler:
         """
         raise NotImplementedError("Should be implemented by subclasses.")
 
-    async def handle_exc(
-        self, e: Exception, message: HumanChatMessage
-    ):
+    async def handle_exc(self, e: Exception, message: HumanChatMessage):
         """
         Handles an exception raised by `self.process_message()`. A default
         implementation is provided, however chat handlers (subclasses) should
@@ -266,9 +264,7 @@ class BaseChatHandler:
         """
         await self._default_handle_exc(e, message)
 
-    async def _default_handle_exc(
-        self, e: Exception, message: HumanChatMessage
-    ):
+    async def _default_handle_exc(self, e: Exception, message: HumanChatMessage):
         """
         The default definition of `handle_exc()`. This is the default used when
         the `handle_exc()` excepts.
@@ -285,13 +281,13 @@ class BaseChatHandler:
             f"Sorry, an error occurred. Details below:\n\n```\n{formatted_e}\n```"
         )
         self.reply(response, message)
-    
+
     def write_message(self, body: str, id: Optional[str] = None) -> None:
         """[Jupyter Chat only] Writes a message to the YChat shared document
         that this chat handler is assigned to."""
         if not self.ychat:
             return
-        
+
         bot = self.ychat.get_user(BOT["username"])
         if not bot:
             self.ychat.set_user(BOT)
@@ -422,9 +418,7 @@ class BaseChatHandler:
         TODO: Simplify it by only modifying the awareness as soon as jupyterlab chat
         is the only used chat.
         """
-        pending_msg = self.start_pending(
-            text, human_msg=human_msg, ellipsis=ellipsis
-        )
+        pending_msg = self.start_pending(text, human_msg=human_msg, ellipsis=ellipsis)
         try:
             yield pending_msg
         finally:
@@ -501,9 +495,7 @@ class BaseChatHandler:
         else:
             return self.root_dir
 
-    def send_help_message(
-        self, human_msg: Optional[HumanChatMessage] = None
-    ) -> None:
+    def send_help_message(self, human_msg: Optional[HumanChatMessage] = None) -> None:
         """Sends a help message to all connected clients."""
         lm_provider = self.config_manager.lm_provider
         unsupported_slash_commands = (
