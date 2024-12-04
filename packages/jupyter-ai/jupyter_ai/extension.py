@@ -34,6 +34,7 @@ from .chat_handlers import (
 )
 from .completions.handlers import DefaultInlineCompletionHandler
 from .config_manager import ConfigManager
+from .constants import BOT
 from .context_providers import BaseCommandContextProvider, FileContextProvider
 from .handlers import (
     ApiKeysHandler,
@@ -67,15 +68,6 @@ else:
     from jupyter_collaboration.utils import (  # type:ignore[import-untyped]
         JUPYTER_COLLABORATION_EVENTS_URI,
     )
-
-# The BOT currently has a fixed username, because this username is used has key in chats,
-# it needs to constant. Do we need to change it ?
-BOT = {
-    "username": "5f6a7570-7974-6572-6e61-75742d626f74",
-    "name": "Jupyternaut",
-    "display_name": "Jupyternaut",
-    "initials": "J",
-}
 
 DEFAULT_HELP_MESSAGE_TEMPLATE = """Hi there! I'm {persona_name}, your programming assistant.
 You can ask me a question using the text box below. You can also use these commands:
@@ -274,22 +266,22 @@ class AiExtension(ExtensionApp):
         self.log.info(f"Connecting to a chat room with room ID: {room_id}.")
 
         # get YChat document associated with the room
-        chat = await self.get_chat(data["room"])
-        if chat is None:
+        ychat = await self.get_chat(data["room"])
+        if ychat is None:
             return
 
         # Add the bot user to the chat document awareness.
         BOT["avatar_url"] = url_path_join(
             self.settings.get("base_url", "/"), "api/ai/static/jupyternaut.svg"
         )
-        if chat.awareness is not None:
-            chat.awareness.set_local_state_field("user", BOT)
+        if ychat.awareness is not None:
+            ychat.awareness.set_local_state_field("user", BOT)
         
         # initialize chat handlers for new chat
-        self.chat_handlers_by_room[room_id] = self._init_chat_handlers()
+        self.chat_handlers_by_room[room_id] = self._init_chat_handlers(ychat)
 
         callback = partial(self.on_change, room_id)
-        chat.ymessages.observe(callback)
+        ychat.ymessages.observe(callback)
 
     async def get_chat(self, room_id: str) -> Optional[YChat]:
         """
@@ -346,10 +338,6 @@ class AiExtension(ExtensionApp):
         Method that routes an incoming `HumanChatMessage` to the appropriate
         chat handler.
         """
-        chat = await self.get_chat(room_id)
-        if not chat:
-            return
-
         chat_handlers = self.chat_handlers_by_room[room_id]
         default = chat_handlers["default"]
         # Split on any whitespace, either spaces or newlines
@@ -363,34 +351,13 @@ class AiExtension(ExtensionApp):
 
         start = time.time()
         if is_command:
-            await chat_handlers[command].on_message(message, chat)
+            await chat_handlers[command].on_message(message)
         else:
-            await default.on_message(message, chat)
+            await default.on_message(message)
 
         latency_ms = round((time.time() - start) * 1000)
         command_readable = "Default" if command == "default" else command
         self.log.info(f"{command_readable} chat handler resolved in {latency_ms} ms.")
-
-    def write_message(self, chat: YChat, body: str, id: Optional[str] = None) -> str:
-        bot = chat.get_user(BOT["username"])
-        if not bot:
-            chat.set_user(BOT)
-
-        id = id if id else str(uuid.uuid4())
-        chat.set_message(
-            {
-                "type": "msg",
-                "body": body,
-                "id": id if id else str(uuid.uuid4()),
-                "time": time.time(),
-                "sender": BOT["username"],
-                "raw_time": False,
-            },
-            index=None,
-            append=True,
-        )
-
-        return id
 
     def initialize_settings(self):
         start = time.time()
@@ -537,13 +504,13 @@ class AiExtension(ExtensionApp):
             await dask_client.close()
             self.log.debug("Closed Dask client.")
 
-    def _init_chat_handlers(self, room_id: Optional[str] = None) -> Dict[str, BaseChatHandler]:
+    def _init_chat_handlers(self, ychat: Optional[YChat] = None) -> Dict[str, BaseChatHandler]:
         """
-        Initializes a set of chat handlers. May accept a room ID for collaborative chats.
+        Initializes a set of chat handlers. May accept a YChat instance for
+        collaborative chats.
         
-        TODO: Make `room_id` required once original chat is removed.
+        TODO: Make `ychat` required once Jupyter Chat migration is complete.
         """
-
         eps = entry_points()
         chat_handler_eps = eps.select(group="jupyter_ai.chat_handlers")
         chat_handlers = {}
@@ -559,9 +526,9 @@ class AiExtension(ExtensionApp):
             "preferred_dir": self.serverapp.contents_manager.preferred_dir,
             "help_message_template": self.help_message_template,
             "chat_handlers": chat_handlers,
-            "write_message": self.write_message,
             "context_providers": self.settings["jai_context_providers"],
             "message_interrupted": self.settings["jai_message_interrupted"],
+            "ychat": ychat
         }
         default_chat_handler = DefaultChatHandler(**chat_handler_kwargs)
         clear_chat_handler = ClearChatHandler(**chat_handler_kwargs)
