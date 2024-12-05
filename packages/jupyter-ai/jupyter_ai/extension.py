@@ -266,7 +266,7 @@ class AiExtension(ExtensionApp):
         self.log.info(f"Connecting to a chat room with room ID: {room_id}.")
 
         # get YChat document associated with the room
-        ychat = await self.get_chat(data["room"])
+        ychat = await self.get_chat(room_id)
         if ychat is None:
             return
 
